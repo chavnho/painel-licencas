@@ -1,4 +1,4 @@
-from flask import Flask, request, render_template_string, redirect, url_for
+from flask import Flask, request, render_template_string, redirect, url_for, send_file
 import hashlib, datetime, os
 
 app = Flask(__name__)
@@ -258,6 +258,17 @@ def gerar():
     salvar_licenca(email, id_maquina, data_codificada, hash_final)
 
     return redirect(url_for("index"))
+
+@app.route("/download")
+def download_licencas():
+    if os.path.exists(caminho_licencas):
+        return send_file(
+            caminho_licencas,
+            as_attachment=True,
+            download_name="licencas.txt",
+            mimetype="text/plain"
+        )
+    return "Arquivo de licenças não encontrado."
 
 
 if __name__ == "__main__":
