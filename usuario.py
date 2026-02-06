@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template_string
-from html import html_layout_usuario
+from layouts import html_layout_usuario
 
 
 usuario_bp = Blueprint("usuario", __name__)

@@ -1,6 +1,6 @@
 from flask import Blueprint, request, render_template_string, redirect, url_for, send_file, jsonify
 from banco_dados import app, db, Usuario, Licenca
-from html import html_layout
+from layouts import html_layout
 from utils import carregar_licencas, processar_pagamento, calcular_validade_por_valor, codificar_data, gerar_hash, chave_secreta
 
 
