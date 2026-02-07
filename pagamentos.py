@@ -95,33 +95,36 @@ def pagar():
     """
 
 
-@pagamentos_bp.route("/consultar_pagamento/<payment_id>")
+@pagamentos_bp.route("/consultar_pagamento/<int:payment_id>", methods=["GET"])
 def consultar_pagamento(payment_id):
-    result = sdk.payment().get(payment_id)
-    pagamento = result["response"]
+    try:
+        result = sdk.payment().get(payment_id)
+        pagamento = result.get("response", {})
 
-    status = pagamento.get("status")
-    valor = pagamento.get("transaction_amount")
-    email = pagamento.get("payer", {}).get("email")
+        status = pagamento.get("status")
+        valor = pagamento.get("transaction_amount")
+        email = pagamento.get("metadata", {}).get("email")
 
-    if status == "approved":
-        mensagem = "Licença renovada com sucesso!"
-    else:
-        mensagem = f"Pagamento ainda não confirmado. Status: {status}"
+        if status == "approved":
+            mensagem = "Licença renovada com sucesso!"
+        else:
+            mensagem = f"Pagamento ainda não confirmado. Status: {status}"
 
-    return f"""
-    <h2>Status do Pagamento</h2>
-    <p>ID: {payment_id}</p>
-    <p>Email: {email}</p>
-    <p>Valor: R${valor}</p>
-    <p>Status atual: {status}</p>
-    <p>{mensagem}</p>
-    """
+        return f"""
+        <h2>Status do Pagamento</h2>
+        <p>ID: {payment_id}</p>
+        <p>Email: {email}</p>
+        <p>Valor: R${valor:.2f}</p>
+        <p>Status atual: {status}</p>
+        <p>{mensagem}</p>
+        """
+    except Exception as e:
+        return f"<h2>Erro ao consultar pagamento</h2><p>{str(e)}</p>", 500
+
 
 @pagamentos_bp.route("/confirmar", methods=["POST"])
 def confirmar():
-    data = request.get_json(force=True) or {} 
-    print("Webhook recebido:", data) # log completo
+    data = request.get_json(force=True) or {}
     pagamento_id = data.get("data", {}).get("id")
 
     if not pagamento_id:
@@ -131,141 +134,88 @@ def confirmar():
     pagamento = sdk.payment().get(pagamento_id)
     info = pagamento.get("response", {})
 
-    # valor oficial processado
+    # extrai os 3 parâmetros necessários
     valor_pago = info.get("transaction_amount")
-    if valor_pago is None:
-        # loga o payload para debug
-        print("Pagamento sem transaction_amount:", info)
-        return jsonify({"error": "Campo transaction_amount ausente"}), 400
-
-    valor_pago = int(valor_pago)
-
-    # pega email e id_maquina do metadata
     metadata = info.get("metadata", {})
     email = metadata.get("email")
     id_maquina = metadata.get("id_maquina")
+    status = info.get("status")
 
-    # fallback: external_reference
-    if (not email or not id_maquina) and "external_reference" in info:
-        try:
-            email, id_maquina = info["external_reference"].split(":")
-        except Exception:
-            pass
+    # valida dados
+    if not all([valor_pago, email, id_maquina]):
+        app.logger.error(f"Dados incompletos no pagamento {pagamento_id}: {info}")
+        return jsonify({"error": "Dados incompletos"}), 400
 
-    if not email or not id_maquina:
-        return jsonify({"error": "Dados insuficientes no pagamento"}), 400
+    # lógica principal
+    if status == "approved":
+        sucesso, mensagem = processar_pagamento(email, id_maquina, valor_pago)
+        if sucesso:
+            app.logger.info(f"✅ Pagamento aprovado e processado: {mensagem}")
+            return jsonify({"status": "ok", "validade": mensagem}), 200
+        else:
+            app.logger.warning(f"⚠️ Pagamento aprovado mas não processado: {mensagem}")
+            return jsonify({"status": "erro", "mensagem": mensagem}), 400
 
-    # chama a função que faz a renovação
-    ok, resultado = processar_pagamento(email, id_maquina, valor_pago)
+    elif status == "pending":
+        app.logger.info(f"⏳ Pagamento pendente: ID={pagamento_id}, Email={email}, Máquina={id_maquina}")
+        return jsonify({"status": "pendente"}), 200
 
-    if ok:
-        return jsonify({"status": "sucesso", "validade": resultado}), 200
+    elif status == "rejected":
+        app.logger.info(f"❌ Pagamento rejeitado: ID={pagamento_id}, Email={email}, Máquina={id_maquina}")
+        return jsonify({"status": "rejeitado"}), 200
+
     else:
-        return jsonify({"status": "erro", "mensagem": resultado}), 400
+        app.logger.info(f"ℹ️ Status desconhecido: {status}")
+        return jsonify({"status": status}), 200
 
 
-# @pagamentos_bp.route("/confirmar", methods=["POST"])
-# def confirmar():
-#     data = request.json
-#     pagamento_id = data.get("data", {}).get("id")
+# def simular_webhook():
+#     pagamento_id = 145204842448  # ID fixo para teste
 
-#     if not pagamento_id:
-#         return jsonify({"error": "Pagamento ID não encontrado"}), 400
-
-#     # consulta o pagamento no Mercado Pago
 #     pagamento = sdk.payment().get(pagamento_id)
-#     info = pagamento["response"]
+#     info = pagamento.get("response", {})
 
-#     # valor oficial processado
-#     valor_pago = int(info["transaction_amount"])
+#     valor_pago = 15 # info.get("transaction_amount")
+#     # metadata = info.get("metadata", {})
+#     email = "chavnho@gmail.com" # metadata.get("email")
+#     id_maquina = "5BBF9E7D-4BA3-466E-9405-EA43568F1060"
 
-#     # pega email e id_maquina do metadata
-#     metadata = info.get("metadata", {})
-#     email = metadata.get("email")
-#     id_maquina = metadata.get("id_maquina")
-
-#     # alternativa: se quiser usar external_reference
-#     # email, id_maquina = info["external_reference"].split(":")
-
-#     if not email or not id_maquina:
-#         return jsonify({"error": "Dados insuficientes no pagamento"}), 400
-
-#     # chama a função que faz a renovação
-#     ok, resultado = processar_pagamento(email, id_maquina, valor_pago)
-
-#     if ok:
-#         return jsonify({"status": "sucesso", "validade": resultado}), 200
-#     else:
-#         return jsonify({"status": "erro", "mensagem": resultado}), 400
+#     return email, id_maquina, valor_pago
 
 
-# @pagamentos_bp.route("/confirmar_teste", methods=["POST"])
-# def confirmar_teste():
-#     # O Mercado Pago envia data.id no webhook
-#     data = request.json or request.args
-#     pagamento_id = None
-
-#     # Pode vir como querystring (?data.id=123&type=payment) ou no body
-#     if "data" in data and isinstance(data["data"], dict):
-#         pagamento_id = data["data"].get("id")
-#     elif "id" in data:
-#         pagamento_id = data.get("id")
-
-#     if not pagamento_id:
-#         return jsonify({"error": "Pagamento ID não encontrado"}), 400
-
-#     # Consulta os detalhes completos do pagamento via SDK
-#     pagamento = sdk.payment().get(pagamento_id)
-#     info = pagamento["response"]
-
-#     # Agora sim temos transaction_amount e metadata
-#     valor_pago = int(info.get("transaction_amount", 0))
-#     email = info.get("metadata", {}).get("email")
-#     id_maquina = info.get("metadata", {}).get("id_maquina")
-
-#     # Apenas log para teste
-#     app.logger.info(f"[TESTE] Pagamento {pagamento_id} recebido: email={email}, maquina={id_maquina}, valor={valor_pago}")
-
+# @pagamentos_bp.route("/simular", methods=["GET"])
+# def simular():
+#     email, id_maquina, valor_pago = simular_webhook()
+#     processar_pagamento(email, id_maquina, valor_pago)
 #     return jsonify({
-#         "pagamento_id": pagamento_id,
+#         "status": "simulado",
 #         "email": email,
 #         "id_maquina": id_maquina,
 #         "valor_pago": valor_pago
 #     }), 200
 
 
-@pagamentos_bp.route("/confirmar_teste", methods=["POST"])
-def confirmar_teste():
-    data = request.json or request.args
 
-    # tenta pegar o ID em diferentes formatos
-    pagamento_id = None
-    if isinstance(data, dict):
-        # caso venha como querystring: ?data.id=123
-        if "data.id" in data:
-            pagamento_id = data.get("data.id")
-        # caso venha como JSON: {"data": {"id": 123}}
-        elif "data" in data and isinstance(data["data"], dict):
-            pagamento_id = data["data"].get("id")
-        elif "id" in data:
-            pagamento_id = data.get("id")
+# @pagamentos_bp.route("/criar_pagamento_teste", methods=["GET"])
+# def criar_pagamento_teste():
+#     pagamento_data = {
+#         "transaction_amount": 1.00,
+#         "description": "Teste Webhook Pix",
+#         "payment_method_id": "pix",
+#         "payer": {
+#             "email": "teste@exemplo.com"
+#         },
+#         "metadata": {
+#             "email": "teste@exemplo.com",
+#             "id_maquina": "TESTE123"
+#         }
+#     }
 
-    if not pagamento_id:
-        return jsonify({"error": "Pagamento ID não encontrado"}), 400
+#     pagamento = sdk.payment().create(pagamento_data)
+#     info = pagamento.get("response", {})
 
-    # consulta os detalhes completos do pagamento via SDK
-    pagamento = sdk.payment().get(pagamento_id)
-    info = pagamento["response"]
+#     # loga os detalhes do pagamento criado
+#     app.logger.info(f"[CRIAR PAGAMENTO TESTE] {info}")
 
-    valor_pago = int(info.get("transaction_amount", 0))
-    email = info.get("metadata", {}).get("email")
-    id_maquina = info.get("metadata", {}).get("id_maquina")
+#     return jsonify(info), 200
 
-    app.logger.info(f"[TESTE] Pagamento {pagamento_id} recebido: email={email}, maquina={id_maquina}, valor={valor_pago}")
-
-    return jsonify({
-        "pagamento_id": pagamento_id,
-        "email": email,
-        "id_maquina": id_maquina,
-        "valor_pago": valor_pago
-    }), 200
