@@ -1,14 +1,21 @@
 from flask import Flask
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+import os
 
 app = Flask(__name__)
 
-# Configuração do banco (SQLite local, pode trocar por MySQL/Postgres)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///licencas.db'
+uri = os.getenv("DATABASE_URL", "sqlite:///instance/licencas.db")
+if uri.startswith("postgres://"):
+    uri = uri.replace("postgres://", "postgresql+psycopg2://")
+elif uri.startswith("postgresql://"):
+    uri = uri.replace("postgresql://", "postgresql+psycopg2://")
+
+app.config['SQLALCHEMY_DATABASE_URI'] = uri
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
 
 # --- MODELOS ---
 class Usuario(db.Model):
