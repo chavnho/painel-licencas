@@ -5,10 +5,11 @@ import os
 
 app = Flask(__name__)
 
-uri = os.getenv("DATABASE_URL")
-if not uri:
-    # fallback só para ambiente local
-    uri = "sqlite:///licencas.db"
+if os.getenv("VERCEL_ENV"):  # variável que o Vercel define
+    uri = os.getenv("DATABASE_URL")  # sempre Neon
+else:
+    uri = os.getenv("DATABASE_URL", "sqlite:///licencas.db")
+
 
 if uri.startswith("postgres://"):
     uri = uri.replace("postgres://", "postgresql+psycopg2://")
