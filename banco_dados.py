@@ -5,7 +5,11 @@ import os
 
 app = Flask(__name__)
 
-uri = os.getenv("DATABASE_URL", "sqlite:///instance/licencas.db")
+uri = os.getenv("DATABASE_URL")
+if not uri:
+    # fallback só para ambiente local
+    uri = "sqlite:///licencas.db"
+
 if uri.startswith("postgres://"):
     uri = uri.replace("postgres://", "postgresql+psycopg2://")
 elif uri.startswith("postgresql://"):
