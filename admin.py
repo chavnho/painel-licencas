@@ -32,30 +32,30 @@ def gerar():
 
 
 @admin_bp.route("/download")
-def download_licencas():
-    registros = Licenca.query.all()
-    resposta = []
+def download_licenca():
+    id_maquina = request.args.get("id")  # cliente envia ?id=ID_MAQUINA
+    licenca = Licenca.query.filter_by(maquina_id=id_maquina).first()
 
-    for licenca in registros:
-        usuario = licenca.usuario.email
-        id_maquina = licenca.maquina_id
-        validade = licenca.validade.strftime("%Y-%m-%d")  # formato YYYY-MM-DD
-        dias_restantes = (licenca.validade - datetime.now().date()).days
-
-        status = "ok"
-        if dias_restantes <= 0:
-            status = "expirada"
-            dias_restantes = 0
-
-        resposta.append({
-            "status": status,
-            "email": usuario,
-            "id_maquina": id_maquina,
-            "validade": validade,
-            "dias_restantes": dias_restantes
+    if not licenca:
+        return jsonify({
+            "status": "expirada",
+            "validade": None,
+            "dias_restantes": 0
         })
 
-    return jsonify(resposta)
+    validade = licenca.validade.strftime("%Y-%m-%d")
+    dias_restantes = (licenca.validade - datetime.now().date()).days
+
+    status = "ok" if dias_restantes > 0 else "expirada"
+    if dias_restantes < 0:
+        dias_restantes = 0
+
+    return jsonify({
+        "status": status,
+        "validade": validade,
+        "dias_restantes": dias_restantes
+    })
+
 
 
 @admin_bp.route("/registrar", methods=["POST"])
