@@ -2,7 +2,7 @@ from flask import Blueprint, request, render_template_string, redirect, url_for,
 from banco_dados import app, db, Usuario, Licenca
 from layouts import html_layout
 from utils import carregar_licencas, processar_pagamento, calcular_validade_por_valor, codificar_data, gerar_hash, chave_secreta
-
+from datetime import datetime
 
 caminho_licencas = "licencas.txt"
 
@@ -34,15 +34,28 @@ def gerar():
 @admin_bp.route("/download")
 def download_licencas():
     registros = Licenca.query.all()
-    linhas = []
-    for licenca in registros:
-        partes = licenca.licenca_codificada.split("|")
-        data_codificada = partes[0]
-        hash_final = partes[1]
-        linhas.append(f"{licenca.usuario.email}={licenca.maquina_id}|{data_codificada}|{hash_final}")
+    resposta = []
 
-    conteudo = "\n".join(linhas)
-    return conteudo, 200, {"Content-Type": "text/plain; charset=utf-8"}
+    for licenca in registros:
+        usuario = licenca.usuario.email
+        id_maquina = licenca.maquina_id
+        validade = licenca.validade.strftime("%Y-%m-%d")  # formato YYYY-MM-DD
+        dias_restantes = (licenca.validade - datetime.now().date()).days
+
+        status = "ok"
+        if dias_restantes <= 0:
+            status = "expirada"
+            dias_restantes = 0
+
+        resposta.append({
+            "status": status,
+            "email": usuario,
+            "id_maquina": id_maquina,
+            "validade": validade,
+            "dias_restantes": dias_restantes
+        })
+
+    return jsonify(resposta)
 
 
 @admin_bp.route("/registrar", methods=["POST"])
