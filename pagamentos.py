@@ -118,10 +118,10 @@ def consultar_pagamento(payment_id):
     <p>{mensagem}</p>
     """
 
-
 @pagamentos_bp.route("/confirmar", methods=["POST"])
 def confirmar():
-    data = request.json
+    data = request.get_json(force=True) or {} 
+    print("Webhook recebido:", data) # log completo
     pagamento_id = data.get("data", {}).get("id")
 
     if not pagamento_id:
@@ -129,18 +129,28 @@ def confirmar():
 
     # consulta o pagamento no Mercado Pago
     pagamento = sdk.payment().get(pagamento_id)
-    info = pagamento["response"]
+    info = pagamento.get("response", {})
 
     # valor oficial processado
-    valor_pago = int(info["transaction_amount"])
+    valor_pago = info.get("transaction_amount")
+    if valor_pago is None:
+        # loga o payload para debug
+        print("Pagamento sem transaction_amount:", info)
+        return jsonify({"error": "Campo transaction_amount ausente"}), 400
+
+    valor_pago = int(valor_pago)
 
     # pega email e id_maquina do metadata
     metadata = info.get("metadata", {})
     email = metadata.get("email")
     id_maquina = metadata.get("id_maquina")
 
-    # alternativa: se quiser usar external_reference
-    # email, id_maquina = info["external_reference"].split(":")
+    # fallback: external_reference
+    if (not email or not id_maquina) and "external_reference" in info:
+        try:
+            email, id_maquina = info["external_reference"].split(":")
+        except Exception:
+            pass
 
     if not email or not id_maquina:
         return jsonify({"error": "Dados insuficientes no pagamento"}), 400
@@ -152,6 +162,41 @@ def confirmar():
         return jsonify({"status": "sucesso", "validade": resultado}), 200
     else:
         return jsonify({"status": "erro", "mensagem": resultado}), 400
+
+
+# @pagamentos_bp.route("/confirmar", methods=["POST"])
+# def confirmar():
+#     data = request.json
+#     pagamento_id = data.get("data", {}).get("id")
+
+#     if not pagamento_id:
+#         return jsonify({"error": "Pagamento ID não encontrado"}), 400
+
+#     # consulta o pagamento no Mercado Pago
+#     pagamento = sdk.payment().get(pagamento_id)
+#     info = pagamento["response"]
+
+#     # valor oficial processado
+#     valor_pago = int(info["transaction_amount"])
+
+#     # pega email e id_maquina do metadata
+#     metadata = info.get("metadata", {})
+#     email = metadata.get("email")
+#     id_maquina = metadata.get("id_maquina")
+
+#     # alternativa: se quiser usar external_reference
+#     # email, id_maquina = info["external_reference"].split(":")
+
+#     if not email or not id_maquina:
+#         return jsonify({"error": "Dados insuficientes no pagamento"}), 400
+
+#     # chama a função que faz a renovação
+#     ok, resultado = processar_pagamento(email, id_maquina, valor_pago)
+
+#     if ok:
+#         return jsonify({"status": "sucesso", "validade": resultado}), 200
+#     else:
+#         return jsonify({"status": "erro", "mensagem": resultado}), 400
 
 
 # @pagamentos_bp.route("/confirmar_teste", methods=["POST"])
